@@ -43,7 +43,12 @@ It contains more than 20 different Quechua region dialects
 - Southern Conchucos
 - Tena Lowland
         
-        
+
+Note: When the program asks you to enter the Quechua region dialect. Type the region supported in minor cases and with dashes in case its double worded.
+
+Ex: 
+
+    Enter the Quechua region dialect you wanna use: san-martin
 
 ### Usage
 1. Install all the dependencies
