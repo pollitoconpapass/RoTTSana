@@ -39,4 +39,8 @@ It currently supports only Ayacucho Quechua.
         cd frontend
         npm install
         npm start
+
+
+### Demonstration
+![alt text](image.png)
     
