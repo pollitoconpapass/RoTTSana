@@ -1,0 +1,9 @@
+SpeechRecognition==3.10.1
+fastapi==0.108.0
+numpy==1.26.4
+pydub==0.25.1
+soundfile==0.12.1
+torch==2.2.0
+torchaudio==2.2.0
+transformers==4.37.2
+uvicorn==0.25.0

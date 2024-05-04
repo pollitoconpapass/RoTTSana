@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse
-from transformers import VitsModel, AutoTokenizer
+from fastapi.middleware.cors import CORSMiddleware
+from transformers import VitsModel, AutoTokenizer, pipeline
 from transformers import Wav2Vec2ForCTC, AutoProcessor
 from pydub import AudioSegment
+from functions import convert_audio, detect_language
 import soundfile as sf
 import numpy as np
 import torchaudio
@@ -12,40 +14,33 @@ import io
 
 
 app = FastAPI()
+origins = [
+    "http://localhost:3000",  # React application running on localhost:3000
+    "http://192.168.18.148:3000"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # === TTS GENERAL ===
 hg_models = {
-    "san-martin": "facebook/mms-tts-qvs",
-    "cuzco": "facebook/mms-tts-quz",
-    "huallaga": "facebook/mms-tts-qub",
-    "lambayeque": "facebook/mms-tts-quf",
-    "south-bolivia": "facebook/mms-tts-quh",
-    "north-bolivia": "facebook/mms-tts-qul",
-    "tena-lowland": "facebook/mms-tts-quw",
-    "ayacucho": "facebook/mms-tts-quy",
-    "cajamarca": "facebook/mms-tts-qvc",
-    "eastern-apurimac": "facebook/mms-tts-qve",
-    "huamelies": "facebook/mms-tts-qvh",
-    "margos-lauricocha": "facebook/mms-tts-qvm",
-    "north-junin": "facebook/mms-tts-qvn",
-    "huaylas": "facebook/mms-tts-qwh",
-    "panao": "facebook/mms-tts-qxh",
-    "northern-conchucos": "facebook/mms-tts-qxn",
-    "southern-conchucos": "facebook/mms-tts-qxo",
-    "salasaca-highland": "facebook/mms-tts-qxl",
-    "huaylla-wanca": "facebook/mms-tts-qvw",
-    "northern-pastaza": "facebook/mms-tts-qvz",
-    "napo": "facebook/mms-tts-qvo",
-    "canar": "facebook/mms-tts-qxr",
-    "spanish": "facebook/mms-tts-spa"
+    "qu": "facebook/mms-tts-quy",  # -> Quechua Ayacucho (Chanka)
+    "es": "facebook/mms-tts-spa"
 }
 
-@app.get("/tts-general")
-async def tts(text, language):
-    global audio_count
+@app.post("/tts-general")
+async def tts(data: dict):
     try:
-        default = "facebook/mms-tts-quz"
+        text = data["text"]
+        language = detect_language(text)
+        print(language)
+        default = "facebook/mms-tts-quy"
 
         # Verifica si hay una GPU disponible y configura PyTorch para usarla
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,21 +82,17 @@ async def tts(text, language):
 
 # === STT GENERAL ===
 @app.post("/stt-general")
-async def stt(data: dict):
+async def stt(audio_file: UploadFile = File(...)):
     try:
+        audio_bytes = await audio_file.read()
+        audio_data = convert_audio(audio_bytes)
+
         model_id = "facebook/mms-1b-all"
         processor = AutoProcessor.from_pretrained(model_id)
         model = Wav2Vec2ForCTC.from_pretrained(model_id)
 
-        wav_file_path = data["file_path"]
-        audio_data, original_sampling_rate = torchaudio.load(wav_file_path)
+        audio_data, original_sampling_rate = torchaudio.load(audio_data)
         resampled_audio_data = torchaudio.transforms.Resample(original_sampling_rate, 16000)(audio_data)
-
-        language = data["language"]
-        acronym = "spa" if language == "spanish" else "quz"
-
-        processor.tokenizer.set_target_lang(acronym)  # -> specifying the language...
-        model.load_adapter(acronym)
 
         inputs = processor(resampled_audio_data.numpy(), sampling_rate=16000, return_tensors="pt")
         with torch.no_grad():
@@ -114,6 +105,25 @@ async def stt(data: dict):
     
     except Exception as e:
         return {"error": str(e)}
+    
+
+# === TRANSLATION ENDPOINT ===
+@app.post("/translate-free")
+def translate_free(data: dict):
+    text = data["text"]
+    language = detect_language(text)
+    print("LANGUAGE DETECTED: ", language)
+
+    src_language = "spa_Latn" if language == "es" else "quy_Latn"
+    target_language = "quy_Latn" if language == "es" else "spa_Latn"
+    print(f"{src_language} -> {target_language}")
+ 
+    model = 'facebook/nllb-200-distilled-600M'
+    tokenizer = AutoTokenizer.from_pretrained(model)
+
+    translator = pipeline('translation', model=model, tokenizer=tokenizer, src_lang=src_language, tgt_lang=target_language)
+    output = translator(text, max_length=400)
+    return output[0]['translation_text']
     
 
 if __name__ == "__main__":
